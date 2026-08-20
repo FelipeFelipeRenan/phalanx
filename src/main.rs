@@ -1,8 +1,20 @@
-use std::{collections::HashMap, io::{ErrorKind, Read, Write}, net::SocketAddr};
+use std::{
+    collections::HashMap,
+    io::{ErrorKind, Read, Write},
+    net::SocketAddr,
+};
 
-use mio::{Events, Interest, Poll, Token, net::TcpListener};
+use mio::{
+    Events, Interest, Poll, Token,
+    net::{TcpListener, TcpStream},
+};
 
 const SERVER: Token = Token(0);
+
+struct Connection {
+    stream: TcpStream,
+    write_buffer: Vec<u8>,
+}
 
 fn main() -> std::io::Result<()> {
     let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
@@ -33,7 +45,13 @@ fn main() -> std::io::Result<()> {
 
                         poll.registry()
                             .register(&mut stream, token, Interest::READABLE)?;
-                        connections.insert(token, stream);
+                        connections.insert(
+                            token,
+                            Connection {
+                                stream,
+                                write_buffer: Vec::new(),
+                            },
+                        );
                     }
                     Err(error) => {
                         eprintln!("Accept error: {error}");
@@ -44,9 +62,9 @@ fn main() -> std::io::Result<()> {
 
                 let mut should_remove = false;
 
-                if let Some(stream) = connections.get_mut(&token) {
+                if let Some(connection) = connections.get_mut(&token) {
                     let mut buffer = [0u8; 4096];
-                    match stream.read(&mut buffer) {
+                    match connection.stream.read(&mut buffer) {
                         Ok(0) => {
                             println!("Connection {token:?} closed");
                             should_remove = true;
@@ -54,22 +72,13 @@ fn main() -> std::io::Result<()> {
 
                         Ok(bytes_read) => {
                             println!("Read {bytes_read} bytes");
-                            match stream.write(&buffer[..bytes_read]) {
-                                Ok(bytes_written) =>{
-                                    println!("Wrote {bytes_written} bytes");
-                                }
 
-                                Err(error) if error.kind() == ErrorKind::WouldBlock =>{
-                                    println!("Socket not writable right now");
-                                }
-
-                                Err(error) =>{
-                                    eprintln!("Write error: {error}");
-                                }
-                            }
+                            connection
+                                .write_buffer
+                                .extend_from_slice(&buffer[..bytes_read]);
                         }
 
-                        Err(error) if error.kind() == ErrorKind::WouldBlock =>{
+                        Err(error) if error.kind() == ErrorKind::WouldBlock => {
                             //TODO
                         }
                         Err(error) => {
@@ -78,7 +87,7 @@ fn main() -> std::io::Result<()> {
                         }
                     }
                 }
-                if should_remove{
+                if should_remove {
                     connections.remove(&token);
                 }
             }
