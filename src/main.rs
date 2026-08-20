@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::{ErrorKind, Read}, net::SocketAddr};
+use std::{collections::HashMap, io::{ErrorKind, Read, Write}, net::SocketAddr};
 
 use mio::{Events, Interest, Poll, Token, net::TcpListener};
 
@@ -42,24 +42,44 @@ fn main() -> std::io::Result<()> {
             } else {
                 let token = event.token();
 
+                let mut should_remove = false;
+
                 if let Some(stream) = connections.get_mut(&token) {
                     let mut buffer = [0u8; 4096];
                     match stream.read(&mut buffer) {
                         Ok(0) => {
-                            println!("Connection {token:?} closed")
+                            println!("Connection {token:?} closed");
+                            should_remove = true;
                         }
 
                         Ok(bytes_read) => {
                             println!("Read {bytes_read} bytes");
+                            match stream.write(&buffer[..bytes_read]) {
+                                Ok(bytes_written) =>{
+                                    println!("Wrote {bytes_written} bytes");
+                                }
+
+                                Err(error) if error.kind() == ErrorKind::WouldBlock =>{
+                                    println!("Socket not writable right now");
+                                }
+
+                                Err(error) =>{
+                                    eprintln!("Write error: {error}");
+                                }
+                            }
                         }
 
                         Err(error) if error.kind() == ErrorKind::WouldBlock =>{
                             //TODO
                         }
                         Err(error) => {
-                            eprintln!("Read error on {token:?}: {error}")
+                            eprintln!("Read error on {token:?}: {error}");
+                            should_remove = true
                         }
                     }
+                }
+                if should_remove{
+                    connections.remove(&token);
                 }
             }
         }
