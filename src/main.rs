@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, io::{ErrorKind, Read}, net::SocketAddr};
 
 use mio::{Events, Interest, Poll, Token, net::TcpListener};
 
@@ -37,6 +37,28 @@ fn main() -> std::io::Result<()> {
                     }
                     Err(error) => {
                         eprintln!("Accept error: {error}");
+                    }
+                }
+            } else {
+                let token = event.token();
+
+                if let Some(stream) = connections.get_mut(&token) {
+                    let mut buffer = [0u8; 4096];
+                    match stream.read(&mut buffer) {
+                        Ok(0) => {
+                            println!("Connection {token:?} closed")
+                        }
+
+                        Ok(bytes_read) => {
+                            println!("Read {bytes_read} bytes");
+                        }
+
+                        Err(error) if error.kind() == ErrorKind::WouldBlock =>{
+                            //TODO
+                        }
+                        Err(error) => {
+                            eprintln!("Read error on {token:?}: {error}")
+                        }
                     }
                 }
             }
