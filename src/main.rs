@@ -76,6 +76,12 @@ fn main() -> std::io::Result<()> {
                             connection
                                 .write_buffer
                                 .extend_from_slice(&buffer[..bytes_read]);
+
+                            poll.registry().reregister(
+                                &mut connection.stream,
+                                token,
+                                Interest::READABLE | Interest::WRITABLE,
+                            )?;
                         }
 
                         Err(error) if error.kind() == ErrorKind::WouldBlock => {
@@ -84,6 +90,28 @@ fn main() -> std::io::Result<()> {
                         Err(error) => {
                             eprintln!("Read error on {token:?}: {error}");
                             should_remove = true
+                        }
+                    }
+
+                    let write_result = connection.stream.write(&connection.write_buffer);
+
+                    match write_result {
+                        Ok(bytes_written) => {
+                            connection.write_buffer.drain(..bytes_written);
+
+                            if connection.write_buffer.is_empty() {
+                                poll.registry().reregister(
+                                    &mut connection.stream,
+                                    token,
+                                    Interest::READABLE,
+                                )?;
+                            }
+                        }
+
+                        Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+
+                        Err(error) => {
+                            eprintln!("Write error: {error}")
                         }
                     }
                 }
