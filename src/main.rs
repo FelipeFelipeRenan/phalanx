@@ -102,30 +102,38 @@ fn main() -> std::io::Result<()> {
                     }
 
                     if event.is_writable() && !connection.write_buffer.is_empty() {
-                        let write_result = connection.stream.write(&connection.write_buffer);
-
-                        match write_result {
-                            Ok(bytes_written) => {
-                                println!("Wrote {bytes_written} bytes");
-
-                                connection.write_buffer.drain(..bytes_written);
-
-                                if connection.write_buffer.is_empty() {
-                                    poll.registry().reregister(
-                                        &mut connection.stream,
-                                        token,
-                                        Interest::READABLE,
-                                    )?;
+                        loop {
+                            match connection.stream.write(&connection.write_buffer) {
+                                Ok(0) => {
+                                    eprintln!("Write returned 0 on {token:?}");
+                                    should_remove = true;
+                                    break;
                                 }
-                            }
+                                Ok(bytes_written) => {
+                                    println!("Wrote {bytes_written} bytes");
 
-                            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                                // Socket is not writable right now.
-                            }
+                                    connection.write_buffer.drain(..bytes_written);
 
-                            Err(error) => {
-                                eprintln!("Write error on {token:?}: {error}");
-                                should_remove = true;
+                                    if connection.write_buffer.is_empty() {
+                                        poll.registry().reregister(
+                                            &mut connection.stream,
+                                            token,
+                                            Interest::READABLE,
+                                        )?;
+
+                                        break;
+                                    }
+                                }
+
+                                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                                    break;
+                                }
+
+                                Err(error) => {
+                                    eprintln!("Write error on {token:?}: {error}");
+                                    should_remove = true;
+                                    break;
+                                }
                             }
                         }
                     }
