@@ -5,7 +5,7 @@ mod reactor;
 use std::net::SocketAddr;
 
 use error::Result;
-use reactor::reactor::Reactor;
+use reactor::Reactor;
 
 fn main() -> Result<()> {
     let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
