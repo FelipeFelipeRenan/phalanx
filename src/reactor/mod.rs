@@ -1,7 +1,11 @@
 use std::{
     collections::HashMap,
-    io::{ErrorKind, Read, Write},
+    io::{self, ErrorKind, Read, Write},
     net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use mio::{Events, Interest, Poll, Token};
@@ -12,6 +16,7 @@ use crate::{
 };
 
 const SERVER: Token = Token(0);
+const WAKER: Token = Token(1);
 
 pub struct Reactor {
     poll: Poll,
@@ -19,6 +24,23 @@ pub struct Reactor {
     listener: Listener,
     connections: HashMap<Token, Connection>,
     next_token: usize,
+    running: Arc<AtomicBool>,
+    waker: Arc<mio::Waker>,
+}
+
+#[derive(Clone)]
+pub struct ShutdownHandle {
+    running: Arc<AtomicBool>,
+    waker: Arc<mio::Waker>,
+}
+
+impl ShutdownHandle {
+    pub fn shutdown(&self) -> Result<()> {
+        self.running.store(false, Ordering::Relaxed);
+        self.waker.wake()?;
+
+        Ok(())
+    }
 }
 
 impl Reactor {
@@ -30,17 +52,27 @@ impl Reactor {
         poll.registry()
             .register(listener.inner_mut(), SERVER, Interest::READABLE)?;
 
+        let running = Arc::new(AtomicBool::new(true));
+
+        let waker = Arc::new(mio::Waker::new(poll.registry(), WAKER)?);
+
         Ok(Self {
             poll,
             events: Events::with_capacity(1024),
             listener,
             connections: HashMap::new(),
-            next_token: 1,
+            next_token: 2,
+            running,
+            waker,
         })
     }
 
+    pub fn local_addr(&mut self) -> io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+
     pub fn run(&mut self) -> Result<()> {
-        loop {
+        while self.running.load(Ordering::Relaxed) {
             self.poll.poll(&mut self.events, None)?;
 
             let events: Vec<(Token, bool, bool)> = self
@@ -50,12 +82,38 @@ impl Reactor {
                 .collect();
 
             for (token, readable, writable) in events {
-                if token == SERVER {
-                    self.accept_connection()?;
-                } else {
-                    self.handle_connection(token, readable, writable)?;
+                println!("Event: token={token:?}, readable={readable}, writable={writable}");
+
+                match token {
+                    SERVER => {
+                        self.accept_connection()?;
+                    }
+
+                    WAKER => {
+                        println!("Waker event");
+                    }
+
+                    _ => {
+                        self.handle_connection(token, readable, writable)?;
+                    }
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    pub fn shutdown(&self) -> Result<()> {
+        self.running.store(false, Ordering::Relaxed);
+        self.waker.wake()?;
+
+        Ok(())
+    }
+
+    pub fn shutdown_handle(&self) -> ShutdownHandle {
+        ShutdownHandle {
+            running: Arc::clone(&self.running),
+            waker: Arc::clone(&self.waker),
         }
     }
 

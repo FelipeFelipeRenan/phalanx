@@ -20,4 +20,8 @@ impl Listener {
     pub fn inner_mut(&mut self) -> &mut TcpListener {
         &mut self.inner
     }
+
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.local_addr()
+    }
 }
