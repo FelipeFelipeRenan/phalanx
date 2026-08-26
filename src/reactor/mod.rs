@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{self, ErrorKind, Read, Write},
+    io::{self},
     net::SocketAddr,
     sync::{
         Arc,
@@ -146,66 +146,24 @@ impl Reactor {
 
         if let Some(connection) = self.connections.get_mut(&token) {
             if readable {
-                let mut buffer = [0u8; 4096];
+                match connection.read()? {
+                    Some(bytes_read) if bytes_read > 0 => {
+                        println!("Read {bytes_read} bytes");
+                    }
 
-                loop {
-                    match connection.stream.read(&mut buffer) {
-                        Ok(0) => {
-                            println!("Connection {token:?} closed");
-                            connection.state = ConnectionState::Closing;
-                            break;
-                        }
+                    Some(_) => {}
 
-                        Ok(bytes_read) => {
-                            println!("Read {bytes_read} bytes");
-
-                            connection
-                                .write_buffer
-                                .extend_from_slice(&buffer[..bytes_read]);
-                        }
-
-                        Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                            break;
-                        }
-
-                        Err(error) => {
-                            eprintln!("Read error on {token:?}: {error}");
-                            should_remove = true;
-                            break;
-                        }
+                    None => {
+                        println!("Connection {token:?} closed");
                     }
                 }
             }
 
             if writable && !connection.write_buffer.is_empty() {
-                loop {
-                    match connection.stream.write(&connection.write_buffer) {
-                        Ok(0) => {
-                            eprintln!("Write returned 0 on {token:?}");
-                            should_remove = true;
-                            break;
-                        }
+                let bytes_written = connection.write()?;
 
-                        Ok(bytes_written) => {
-                            println!("Wrote {bytes_written} bytes");
-
-                            connection.write_buffer.drain(..bytes_written);
-
-                            if connection.write_buffer.is_empty() {
-                                break;
-                            }
-                        }
-
-                        Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                            break;
-                        }
-
-                        Err(error) => {
-                            eprintln!("Write error on {token:?}: {error}");
-                            should_remove = true;
-                            break;
-                        }
-                    }
+                if bytes_written > 0 {
+                    println!("Wrote {bytes_written} bytes");
                 }
             }
 
