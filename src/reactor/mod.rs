@@ -12,7 +12,10 @@ use mio::{Events, Interest, Poll, Token};
 
 use crate::{
     error::Result,
-    net::{connection::Connection, listener::Listener},
+    net::{
+        connection::{Connection, ConnectionState},
+        listener::Listener,
+    },
 };
 
 const SERVER: Token = Token(0);
@@ -82,8 +85,6 @@ impl Reactor {
                 .collect();
 
             for (token, readable, writable) in events {
-                println!("Event: token={token:?}, readable={readable}, writable={writable}");
-
                 match token {
                     SERVER => {
                         self.accept_connection()?;
@@ -151,7 +152,7 @@ impl Reactor {
                     match connection.stream.read(&mut buffer) {
                         Ok(0) => {
                             println!("Connection {token:?} closed");
-                            should_remove = true;
+                            connection.state = ConnectionState::Closing;
                             break;
                         }
 
@@ -206,6 +207,10 @@ impl Reactor {
                         }
                     }
                 }
+            }
+
+            if connection.state == ConnectionState::Closing && connection.write_buffer.is_empty() {
+                should_remove = true;
             }
 
             if !should_remove {

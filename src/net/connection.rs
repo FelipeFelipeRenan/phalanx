@@ -1,8 +1,15 @@
 use mio::net::TcpStream;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionState {
+    Active,
+    Closing,
+}
+
 pub struct Connection {
     pub stream: TcpStream,
     pub write_buffer: Vec<u8>,
+    pub state: ConnectionState,
 }
 
 impl Connection {
@@ -10,6 +17,7 @@ impl Connection {
         Self {
             stream,
             write_buffer: Vec::new(),
+            state: ConnectionState::Active,
         }
     }
 }
