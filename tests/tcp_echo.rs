@@ -33,6 +33,10 @@ fn tcp_echo() {
 
     assert_eq!(&buffer, b"hello phalanx");
 
+    client.shutdown(std::net::Shutdown::Both).unwrap();
+
+    thread::sleep(std::time::Duration::from_millis(20));
+
     shutdown.shutdown().unwrap();
 
     server_thread.join().unwrap();

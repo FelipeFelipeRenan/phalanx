@@ -157,4 +157,85 @@ mod tests {
 
         assert_eq!(&buffer, b"hello phalanx");
     }
+
+    #[test]
+    fn write_stops_when_socket_would_block() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+
+        let address = listener.local_addr().unwrap();
+
+        let client = std::net::TcpStream::connect(address).unwrap();
+
+        let (server_stream, _) = listener.accept().unwrap();
+
+        server_stream.set_nonblocking(true).unwrap();
+
+        let data = vec![b'x'; 16 * 1024 * 1024];
+
+        let mut connection = Connection {
+            stream: TcpStream::from_std(server_stream),
+            write_buffer: data.clone(),
+            state: ConnectionState::Active,
+        };
+
+        let bytes_written = connection.write().unwrap();
+
+        assert!(bytes_written > 0);
+        assert!(bytes_written < data.len());
+        assert_eq!(connection.write_buffer.len(), data.len() - bytes_written);
+
+        drop(client);
+    }
+
+    #[test]
+    fn read_marks_connection_as_closing_on_eof() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+
+        let address = listener.local_addr().unwrap();
+
+        let client = std::net::TcpStream::connect(address).unwrap();
+
+        let (server_stream, _) = listener.accept().unwrap();
+
+        client.shutdown(std::net::Shutdown::Write).unwrap();
+
+        let mut connection = Connection {
+            stream: TcpStream::from_std(server_stream),
+            write_buffer: Vec::new(),
+            state: ConnectionState::Active,
+        };
+
+        let result = connection.read().unwrap();
+
+        assert_eq!(result, None);
+        assert_eq!(connection.state, ConnectionState::Closing);
+    }
+
+    #[test]
+    fn closing_connection_can_still_write_buffered_data() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+
+        let address = listener.local_addr().unwrap();
+
+        let mut client = std::net::TcpStream::connect(address).unwrap();
+
+        let (server_stream, _) = listener.accept().unwrap();
+
+        let mut connection = Connection {
+            stream: TcpStream::from_std(server_stream),
+            write_buffer: b"goodbye phalanx".to_vec(),
+            state: ConnectionState::Closing,
+        };
+
+        let bytes_written = connection.write().unwrap();
+
+        assert_eq!(bytes_written, 15);
+        assert!(connection.write_buffer.is_empty());
+
+        let mut buffer = [0u8; 15];
+
+        client.read_exact(&mut buffer).unwrap();
+
+        assert_eq!(&buffer, b"goodbye phalanx");
+    }
 }
