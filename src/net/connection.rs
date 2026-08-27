@@ -105,4 +105,56 @@ mod tests {
         assert_eq!(result, Some(13));
         assert_eq!(connection.write_buffer, b"hello phalanx");
     }
+
+    #[test]
+    fn read_returns_zero_when_no_data_is_available() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+
+        let address = listener.local_addr().unwrap();
+
+        let _client = std::net::TcpStream::connect(address).unwrap();
+
+        let (server_stream, _) = listener.accept().unwrap();
+
+        server_stream.set_nonblocking(true).unwrap();
+
+        let mut connection = Connection {
+            stream: TcpStream::from_std(server_stream),
+            write_buffer: Vec::new(),
+            state: ConnectionState::Active,
+        };
+
+        let result = connection.read().unwrap();
+
+        assert_eq!(result, Some(0));
+        assert!(connection.write_buffer.is_empty());
+    }
+
+    #[test]
+    fn write_sends_buffered_data_to_peer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+
+        let address = listener.local_addr().unwrap();
+
+        let mut client = std::net::TcpStream::connect(address).unwrap();
+
+        let (server_stream, _) = listener.accept().unwrap();
+
+        let mut connection = Connection {
+            stream: TcpStream::from_std(server_stream),
+            write_buffer: b"hello phalanx".to_vec(),
+            state: ConnectionState::Active,
+        };
+
+        let bytes_written = connection.write().unwrap();
+
+        assert_eq!(bytes_written, 13);
+        assert!(connection.write_buffer.is_empty());
+
+        let mut buffer = [0u8; 13];
+
+        client.read_exact(&mut buffer).unwrap();
+
+        assert_eq!(&buffer, b"hello phalanx");
+    }
 }
