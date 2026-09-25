@@ -10,6 +10,7 @@ pub enum ConnectionState {
 
 pub struct Connection {
     pub stream: TcpStream,
+    pub read_buffer: Vec<u8>,
     pub write_buffer: Vec<u8>,
     pub state: ConnectionState,
 }
@@ -18,6 +19,7 @@ impl Connection {
     pub fn new(stream: TcpStream) -> Self {
         Self {
             stream,
+            read_buffer: Vec::new(),
             write_buffer: Vec::new(),
             state: ConnectionState::Active,
         }
@@ -34,8 +36,7 @@ impl Connection {
                 }
 
                 Ok(bytes_read) => {
-                    self.write_buffer.extend_from_slice(&buffer[..bytes_read]);
-
+                    self.read_buffer.extend_from_slice(&buffer[..bytes_read]);
                     return Ok(Some(bytes_read));
                 }
 
@@ -83,7 +84,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn read_stores_data_in_write_buffer() {
+    fn read_stores_data_in_read_buffer() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
 
         let address = listener.local_addr().unwrap();
@@ -96,6 +97,7 @@ mod tests {
 
         let mut connection = Connection {
             stream: TcpStream::from_std(server_stream),
+            read_buffer: Vec::new(),
             write_buffer: Vec::new(),
             state: ConnectionState::Active,
         };
@@ -103,7 +105,8 @@ mod tests {
         let result = connection.read().unwrap();
 
         assert_eq!(result, Some(13));
-        assert_eq!(connection.write_buffer, b"hello phalanx");
+        assert_eq!(connection.read_buffer, b"hello phalanx");
+        assert!(connection.write_buffer.is_empty());
     }
 
     #[test]
@@ -120,6 +123,7 @@ mod tests {
 
         let mut connection = Connection {
             stream: TcpStream::from_std(server_stream),
+            read_buffer: Vec::new(),
             write_buffer: Vec::new(),
             state: ConnectionState::Active,
         };
@@ -127,7 +131,7 @@ mod tests {
         let result = connection.read().unwrap();
 
         assert_eq!(result, Some(0));
-        assert!(connection.write_buffer.is_empty());
+        assert!(connection.read_buffer.is_empty());
     }
 
     #[test]
@@ -142,6 +146,7 @@ mod tests {
 
         let mut connection = Connection {
             stream: TcpStream::from_std(server_stream),
+            read_buffer: Vec::new(),
             write_buffer: b"hello phalanx".to_vec(),
             state: ConnectionState::Active,
         };
@@ -174,6 +179,7 @@ mod tests {
 
         let mut connection = Connection {
             stream: TcpStream::from_std(server_stream),
+            read_buffer: Vec::new(),
             write_buffer: data.clone(),
             state: ConnectionState::Active,
         };
@@ -201,6 +207,7 @@ mod tests {
 
         let mut connection = Connection {
             stream: TcpStream::from_std(server_stream),
+            read_buffer: Vec::new(),
             write_buffer: Vec::new(),
             state: ConnectionState::Active,
         };
@@ -223,6 +230,7 @@ mod tests {
 
         let mut connection = Connection {
             stream: TcpStream::from_std(server_stream),
+            read_buffer: Vec::new(),
             write_buffer: b"goodbye phalanx".to_vec(),
             state: ConnectionState::Closing,
         };

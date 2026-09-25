@@ -149,6 +149,12 @@ impl Reactor {
                 match connection.read()? {
                     Some(bytes_read) if bytes_read > 0 => {
                         println!("Read {bytes_read} bytes");
+
+                        connection
+                            .write_buffer
+                            .extend_from_slice(&connection.read_buffer);
+
+                        connection.read_buffer.clear();
                     }
 
                     Some(_) => {}
